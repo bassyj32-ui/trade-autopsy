@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { TradeForm } from './components/TradeForm'
 import { AutopsyReport } from './components/AutopsyReport'
 import { Cemetery } from './components/Cemetery'
+import { Confessional } from './components/Confessional'
 import { TradeInput, AnalysisResult, PropFirm } from './lib/types'
 import { analyzeTrade } from './lib/analysis'
 import { Skull } from 'lucide-react'
@@ -47,6 +48,9 @@ function App() {
         )}
 
         {history.length > 0 && <Cemetery history={history} onSelect={setResult} />}
+        
+        {/* New Confessional Section */}
+        <Confessional />
       </main>
 
       <footer className="mt-16 text-center text-muted-foreground text-sm">

@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { AnalysisResult } from '../lib/types';
 import html2canvas from 'html2canvas';
-import { Download, RotateCcw, Skull } from 'lucide-react';
+import { Download, RotateCcw } from 'lucide-react';
+import { getCertificateType, CERTIFICATE_THEMES } from '../lib/certificates';
 
 interface AutopsyReportProps {
   result: AnalysisResult;
@@ -24,17 +25,8 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
     link.click();
   };
 
-  // Determine Stamp Text based on cause
-  const getStamp = (cause: string) => {
-      const c = cause.toLowerCase();
-      if (c.includes('leverage')) return 'MARGIN CALLED';
-      if (c.includes('stop')) return 'HUNTED';
-      if (c.includes('size')) return 'FAT FINGER';
-      if (c.includes('emotional')) return 'WEAK HANDS';
-      return 'LIQUIDATED';
-  };
-
-  const stampText = getStamp(result.causeOfDeath);
+  const type = getCertificateType(result);
+  const theme = CERTIFICATE_THEMES[type];
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
@@ -48,21 +40,26 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
             }}
         >
             {/* Watermark/Background texture simulation */}
-            <div className="absolute inset-0 border-[12px] border-double border-slate-800 pointer-events-none z-20"></div>
+            <div className={`absolute inset-0 border-[12px] border-double ${theme.color.replace('text-', 'border-')} pointer-events-none z-20 opacity-50`}></div>
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-contain bg-no-repeat bg-center opacity-5 pointer-events-none z-0" style={{ backgroundImage: 'url("/skull-icon.png")' }}></div>
 
             {/* Header */}
-            <div className="text-center border-b-4 border-slate-900 pb-6 mb-8 relative z-10">
+            <div className={`text-center border-b-4 ${theme.color.replace('text-', 'border-')} pb-6 mb-8 relative z-10`}>
                 <div className="flex justify-between items-end mb-4 text-xs font-mono text-slate-600 uppercase">
                     <span>Case #: {result.id.slice(0, 8)}</span>
                     <span>Date: {new Date().toLocaleDateString()}</span>
                 </div>
-                <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter text-slate-900 mb-2 flex items-center justify-center gap-4">
-                    <Skull className="w-10 h-10" />
-                    Coroner's Report
-                    <Skull className="w-10 h-10" />
+                <h1 className={`text-4xl md:text-5xl font-black uppercase tracking-tighter ${theme.color} mb-2 flex items-center justify-center gap-4`}>
+                    <span className="text-3xl">{theme.icon}</span>
+                    {theme.title}
+                    <span className="text-3xl">{theme.icon}</span>
                 </h1>
-                <p className="text-sm font-bold tracking-[0.2em] text-slate-600 uppercase">Department of Trading Failures • Morgue Unit 007</p>
+                <p className="text-sm font-bold tracking-[0.2em] text-slate-600 uppercase">{theme.subtitle}</p>
+            </div>
+
+            {/* Stamp Overlay */}
+            <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform -rotate-12 border-[6px] ${theme.color.replace('text-', 'border-')} ${theme.color} font-black text-6xl md:text-8xl p-4 opacity-20 select-none whitespace-nowrap pointer-events-none z-0`}>
+                {theme.stamp}
             </div>
 
             {/* Subject Details */}
@@ -88,8 +85,8 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
             {/* Cause of Death Section */}
             <div className="mb-8 relative z-10">
                 <h3 className="text-lg font-black uppercase bg-slate-900 text-white px-2 py-1 inline-block mb-4">Official Cause of Death</h3>
-                <div className="border-l-4 border-red-700 pl-6 py-2">
-                    <div className="text-4xl font-black text-red-800 uppercase leading-none mb-2">{result.causeOfDeath}</div>
+                <div className={`border-l-4 ${theme.color.replace('text-', 'border-')} pl-6 py-2`}>
+                    <div className={`text-4xl font-black ${theme.color} uppercase leading-none mb-2`}>{result.causeOfDeath}</div>
                     <div className="text-sm font-mono text-slate-600">
                         Primary Factor: <span className="font-bold">{result.propFirmViolation ? 'PROP FIRM VIOLATION' : 'TRADER INCOMPETENCE'}</span>
                     </div>
@@ -106,11 +103,6 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
                         <ul className="list-disc list-inside text-xs md:text-sm">
                             {result.fix.map((f, i) => <li key={i}>{f}</li>)}
                         </ul>
-                    </div>
-                    
-                    {/* The Stamp */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform -rotate-12 border-[6px] border-red-700 text-red-700 font-black text-6xl md:text-8xl p-4 opacity-30 select-none whitespace-nowrap pointer-events-none z-50">
-                        {stampText}
                     </div>
                 </div>
             </div>
