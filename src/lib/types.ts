@@ -40,3 +40,11 @@ export type AnalysisResult = {
 };
 
 export type PropFirm = 'FTMO' | 'MyFundedFX' | 'FundingPips' | 'None';
+
+export type AffiliateLink = {
+  name: string;
+  url: string;
+  code?: string;
+  description: string;
+  recommended: boolean;
+};

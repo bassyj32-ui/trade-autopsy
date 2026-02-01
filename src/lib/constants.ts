@@ -1,4 +1,4 @@
-import { Asset, PropFirm, PropFirmConfig } from './types';
+import { Asset, PropFirm, PropFirmConfig, AffiliateLink } from './types';
 
 export const ASSETS: Asset[] = [
   // Forex Majors
@@ -49,3 +49,27 @@ export const PROP_FIRM_RULES: Record<PropFirm, PropFirmConfig> = {
   FundingPips: { maxRisk: 0.02, dailyDrawdown: 0.05, totalDrawdown: 0.1 },
   None: { maxRisk: 1.0, dailyDrawdown: 1.0, totalDrawdown: 1.0 }, // No strict rules
 };
+
+export const YOUTUBE_CHANNEL_URL = "https://youtube.com/@stop_the_loss?si=NrdMpqTKx-WzwQW_";
+export const YOUTUBE_FEATURED_VIDEO_URL = "https://www.youtube.com/watch?v=8DaFJZYiYwQ";
+
+export const AFFILIATE_LINKS: AffiliateLink[] = [
+  {
+    name: "FTMO",
+    url: "https://ftmo.com/en/", // TODO: Replace with your affiliate link
+    description: "The industry standard. Reliable payouts, great conditions, and established trust.",
+    recommended: true
+  },
+  {
+    name: "Funding Pips",
+    url: "https://fundingpips.com/", // TODO: Replace with your affiliate link
+    description: "Low spreads, fast scaling, and modern dashboard. Great for aggressive scaling.",
+    recommended: false
+  },
+  {
+    name: "MyFundedFX",
+    url: "https://myfundedfx.com/", // TODO: Replace with your affiliate link
+    description: "Excellent for crypto traders. No time limits and competitive pricing.",
+    recommended: false
+  }
+];
