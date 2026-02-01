@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Tesseract from 'tesseract.js';
-import { Upload, Loader2, Bot, ScanText } from 'lucide-react';
+import { Upload, Loader2 } from 'lucide-react';
 import { TradeInput } from '../lib/types';
 import { analyzeImageWithGemini } from '../lib/gemini';
 
