@@ -16,6 +16,19 @@ export function Confessional() {
 
   const fetchConfessions = async () => {
     setLoading(true);
+    
+    // Fallback if Supabase is not configured
+    if (!supabase) {
+        console.warn("Supabase not configured, using mock data");
+        setConfessions([
+            { id: '1', created_at: new Date().toISOString(), message: "Blew my funded account on NFP news. Slippage killed me.", loss_amount: 5000, asset: "XAUUSD" },
+            { id: '2', created_at: new Date(Date.now() - 86400000).toISOString(), message: "Thought Bitcoin was going to 100k yesterday.", loss_amount: 1200, asset: "BTCUSD" },
+            { id: '3', created_at: new Date(Date.now() - 172800000).toISOString(), message: "Revenge traded until I hit max daily loss.", loss_amount: 2500, asset: "US30" },
+        ]);
+        setLoading(false);
+        return;
+    }
+
     // Try to fetch from Supabase
     const { data, error } = await supabase
       .from('confessions')
@@ -60,12 +73,14 @@ export function Confessional() {
     setLossAmount('');
     setAsset('');
 
-    // Send to Supabase
-    const { error } = await supabase.from('confessions').insert([newConfession]);
-    
-    if (error) {
-        console.error("Failed to post confession:", error);
-        // Ideally show error toast, but keeping it simple for MVP
+    // Send to Supabase if configured
+    if (supabase) {
+        const { error } = await supabase.from('confessions').insert([newConfession]);
+        
+        if (error) {
+            console.error("Failed to post confession:", error);
+            // Ideally show error toast, but keeping it simple for MVP
+        }
     }
   };
 
