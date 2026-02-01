@@ -11,8 +11,6 @@ interface ScreenshotUploadProps {
 export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'ocr' | 'ai'>('ocr');
-  const [apiKey, setApiKey] = useState('');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -21,34 +19,45 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
     setLoading(true);
     setError(null);
 
+    // Try AI first, fallback to OCR
     try {
-      if (mode === 'ai') {
-        if (!apiKey) {
-            throw new Error("Please enter a Google Gemini API Key first.");
-        }
-        const result = await analyzeImageWithGemini(file, apiKey);
-        console.log("Gemini Result:", result);
-        if (result.trades && result.trades.length > 0) {
-            onResult(result.trades);
-        } else {
-            setError("AI couldn't find any trades. " + result.feedback);
-        }
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      
+      if (apiKey) {
+          console.log("Attempting AI analysis...");
+          try {
+            const result = await analyzeImageWithGemini(file, apiKey);
+            console.log("Gemini Result:", result);
+            if (result.trades && result.trades.length > 0) {
+                onResult(result.trades);
+                setLoading(false);
+                return; // Success, exit
+            } else {
+                console.warn("AI found no trades, falling back to OCR...", result.feedback);
+            }
+          } catch (aiError) {
+            console.error("AI Analysis failed, falling back to OCR:", aiError);
+          }
       } else {
-        // OCR Mode
-        const { data: { text } } = await Tesseract.recognize(
-            file,
-            'eng',
-            { logger: m => console.log(m) }
-        );
-        
-        console.log("OCR Text:", text);
-        const extracted = parseTradeText(text);
-        if (extracted.length === 0) {
-            setError("No trades detected. Try a clearer screenshot or use AI mode.");
-        } else {
-            onResult(extracted);
-        }
+          console.log("No AI key found, skipping to OCR.");
       }
+
+      // Fallback: OCR Mode
+      console.log("Starting OCR fallback...");
+      const { data: { text } } = await Tesseract.recognize(
+          file,
+          'eng',
+          { logger: m => console.log(m) }
+      );
+      
+      console.log("OCR Text:", text);
+      const extracted = parseTradeText(text);
+      if (extracted.length === 0) {
+          setError("No trades detected. Try a clearer screenshot.");
+      } else {
+          onResult(extracted);
+      }
+
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Failed to analyze screenshot.");
@@ -59,49 +68,18 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
 
   return (
     <div className="w-full space-y-4">
-      {/* Mode Selection */}
-      <div className="flex gap-2 justify-center">
-        <button
-            onClick={() => setMode('ocr')}
-            className={`px-4 py-2 text-xs font-bold uppercase border rounded flex items-center gap-2 ${mode === 'ocr' ? 'bg-slate-800 text-white border-slate-600' : 'bg-transparent text-slate-500 border-slate-800 hover:border-slate-600'}`}
-        >
-            <ScanText className="w-4 h-4" />
-            Basic OCR (Free)
-        </button>
-        <button
-            onClick={() => setMode('ai')}
-            className={`px-4 py-2 text-xs font-bold uppercase border rounded flex items-center gap-2 ${mode === 'ai' ? 'bg-purple-900 text-white border-purple-700' : 'bg-transparent text-slate-500 border-slate-800 hover:border-slate-600'}`}
-        >
-            <Bot className="w-4 h-4" />
-            AI Analysis (Gemini)
-        </button>
-      </div>
-
-      {/* API Key Input for AI Mode */}
-      {mode === 'ai' && (
-        <div className="bg-slate-900 p-3 rounded border border-purple-900/50">
-            <input 
-                type="password" 
-                placeholder="Paste Google Gemini API Key" 
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 p-2 text-white text-xs focus:outline-none focus:border-purple-600 rounded"
-            />
-            <p className="text-[10px] text-slate-500 mt-1">
-                Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-purple-400 hover:underline">Google AI Studio</a>. stored locally only.
-            </p>
-        </div>
-      )}
-
       <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${loading ? 'bg-slate-900 border-slate-700' : 'border-slate-700 hover:bg-slate-800'}`}>
         <div className="flex flex-col items-center justify-center pt-5 pb-6">
           {loading ? (
             <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
           ) : (
-            <Upload className={`w-8 h-8 mb-2 ${mode === 'ai' ? 'text-purple-500' : 'text-slate-500'}`} />
+            <Upload className="w-8 h-8 mb-2 text-purple-500" />
           )}
           <p className="text-sm text-slate-400">
-            {loading ? (mode === 'ai' ? "AI is roasting your trade..." : "Extracting data...") : "Upload Screenshot"}
+            {loading ? "Analyzing trade..." : "Upload Screenshot"}
+          </p>
+          <p className="text-xs text-slate-600 mt-1">
+            Supports MT4, MT5, Binance
           </p>
         </div>
         <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={loading} />
