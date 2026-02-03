@@ -4,7 +4,7 @@ import { AutopsyReport } from './components/AutopsyReport'
 import { Cemetery } from './components/Cemetery'
 import { Confessional } from './components/Confessional'
 // import { RecommendedFirms } from './components/RecommendedFirms'
-import { TradeInput, AnalysisResult, PropFirm } from './lib/types'
+import { TradeInput, AnalysisResult, PropFirm, InferenceResult } from './lib/types'
 import { analyzeTrade } from './lib/analysis'
 import { Skull, Youtube, PlayCircle } from 'lucide-react'
 import { YOUTUBE_CHANNEL_URL, YOUTUBE_FEATURED_VIDEO_URL } from './lib/constants'
@@ -20,8 +20,11 @@ function App() {
     }
   }, []);
 
-  const handleAnalyze = (input: TradeInput, propFirm: PropFirm) => {
-    const res = analyzeTrade(input, propFirm);
+  const handleAnalyze = (input: TradeInput | InferenceResult, propFirm: PropFirm) => {
+    // Cast to any to satisfy the complex union type requirement of analyzeTrade
+    // which expects TradeInput | (InferenceResult & { userAccountSize: number })
+    // The TradeForm guarantees the structure is correct before calling this.
+    const res = analyzeTrade(input as any, propFirm);
     setResult(res);
     const newHistory = [res, ...history].slice(0, 5);
     setHistory(newHistory);

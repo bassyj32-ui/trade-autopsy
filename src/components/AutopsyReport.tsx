@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { AnalysisResult } from '../lib/types';
 import html2canvas from 'html2canvas';
-import { Download, RotateCcw } from 'lucide-react';
+import { Download, RotateCcw, Share2 } from 'lucide-react';
 import { getCertificateType, CERTIFICATE_THEMES } from '../lib/certificates';
 
 interface AutopsyReportProps {
@@ -23,6 +23,44 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
     link.download = `coroner-report-${result.id}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
+  };
+
+  const handleShare = async () => {
+    if (!reportRef.current) return;
+    
+    try {
+        const canvas = await html2canvas(reportRef.current, {
+            backgroundColor: '#f3f4f6',
+            scale: 2, // High res
+            useCORS: true,
+        });
+        
+        canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const file = new File([blob], `autopsy-${result.id}.png`, { type: 'image/png' });
+            
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        title: 'Trade Autopsy',
+                        text: `My trade died of ${result.causeOfDeath}. Verdict: ${result.verdict}`,
+                        files: [file]
+                    });
+                } catch (e) {
+                    console.log('Share failed or cancelled', e);
+                }
+            } else {
+                // Fallback to download
+                const link = document.createElement('a');
+                link.download = `autopsy-${result.id}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                alert("Image saved! Share it manually.");
+            }
+        }, 'image/png');
+    } catch (e) {
+        console.error("Share generation failed", e);
+    }
   };
 
   const type = getCertificateType(result);
@@ -127,6 +165,9 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
         <div className="flex flex-col sm:flex-row gap-4 justify-center print:hidden">
             <button onClick={onReset} className="flex items-center justify-center gap-2 px-6 py-3 bg-muted hover:bg-muted/80 rounded-lg font-bold transition-colors text-foreground">
                 <RotateCcw className="w-5 h-5" /> Analyze Another
+            </button>
+            <button onClick={handleShare} className="flex items-center justify-center gap-2 px-6 py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold shadow-lg shadow-sky-900/20 transition-all hover:scale-105">
+                <Share2 className="w-5 h-5" /> Share on X
             </button>
             <button onClick={handleDownload} className="flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow-lg shadow-red-900/20 transition-all hover:scale-105">
                 <Download className="w-5 h-5" /> Download Certificate

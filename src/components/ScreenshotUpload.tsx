@@ -1,68 +1,67 @@
 import React, { useState } from 'react';
 import Tesseract from 'tesseract.js';
-import { Upload, Loader2 } from 'lucide-react';
-import { TradeInput } from '../lib/types';
-import { analyzeImageWithGemini } from '../lib/gemini';
+import { Loader2, Files } from 'lucide-react';
+import { InferenceResult } from '../lib/types';
+import { inferTradesFromText } from '../lib/tradeInference';
 
 interface ScreenshotUploadProps {
-  onResult: (data: Partial<TradeInput>[]) => void;
+  onResult: (result: InferenceResult) => void;
 }
 
 export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fileCount, setFileCount] = useState(0);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setLoading(true);
     setError(null);
+    setFileCount(files.length);
 
-    // Try AI first, fallback to OCR
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const texts: string[] = [];
       
-      if (apiKey) {
-          console.log("Attempting AI analysis...");
-          try {
-            const result = await analyzeImageWithGemini(file, apiKey);
-            console.log("Gemini Result:", result);
-            if (result.trades && result.trades.length > 0) {
-                onResult(result.trades);
-                setLoading(false);
-                return; // Success, exit
-            } else {
-                console.warn("AI found no trades, falling back to OCR...", result.feedback);
-            }
-          } catch (aiError) {
-            console.error("AI Analysis failed, falling back to OCR:", aiError);
-          }
-      } else {
-          console.log("No AI key found, skipping to OCR.");
+      // Process files sequentially to avoid browser lag
+      for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          
+          // Note: In a real "AI First" flow, we might want to batch this to Gemini if it supports multiple images
+          // But for now, we'll assume OCR is the robust batch fallback as requested.
+          // Or we can try AI for the first one and OCR for the rest?
+          // Let's stick to OCR for batch robustness unless Gemini is super fast.
+          // Actually, let's try Gemini on the first image if it's a single upload, 
+          // but for batch, OCR is often faster/cheaper/more reliable for pure text extraction.
+          
+          // Using Tesseract for all for consistency in batch logic for now
+          // (Unless user wants AI on all 80 screenshots? That might hit rate limits)
+          
+          console.log(`Processing file ${i + 1}/${files.length}...`);
+          const { data: { text } } = await Tesseract.recognize(
+              file,
+              'eng',
+              { logger: m => console.log(m) }
+          );
+          texts.push(text);
       }
-
-      // Fallback: OCR Mode
-      console.log("Starting OCR fallback...");
-      const { data: { text } } = await Tesseract.recognize(
-          file,
-          'eng',
-          { logger: m => console.log(m) }
-      );
       
-      console.log("OCR Text:", text);
-      const extracted = parseTradeText(text);
-      if (extracted.length === 0) {
-          setError("No trades detected. Try a clearer screenshot.");
+      console.log("Extracted texts:", texts);
+      const inference = inferTradesFromText(texts);
+      
+      if (inference.trades.length === 0) {
+          setError("No trades detected in any screenshots.");
       } else {
-          onResult(extracted);
+          onResult(inference);
       }
 
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Failed to analyze screenshot.");
+      setError(err.message || "Failed to analyze screenshots.");
     } finally {
       setLoading(false);
+      setFileCount(0);
     }
   };
 
@@ -71,87 +70,25 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
       <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${loading ? 'bg-slate-900 border-slate-700' : 'border-slate-700 hover:bg-slate-800'}`}>
         <div className="flex flex-col items-center justify-center pt-5 pb-6">
           {loading ? (
-            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+            <div className="flex flex-col items-center">
+                <Loader2 className="w-8 h-8 text-purple-500 animate-spin mb-2" />
+                <p className="text-xs text-purple-400">Processing {fileCount} images...</p>
+            </div>
           ) : (
-            <Upload className="w-8 h-8 mb-2 text-purple-500" />
+            <div className="flex flex-col items-center">
+                <Files className="w-8 h-8 mb-2 text-purple-500" />
+                <p className="text-sm text-slate-400 font-bold">
+                    Upload Screenshots
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                    Select multiple files supported
+                </p>
+            </div>
           )}
-          <p className="text-sm text-slate-400">
-            {loading ? "Analyzing trade..." : "Upload Screenshot"}
-          </p>
-          <p className="text-xs text-slate-600 mt-1">
-            Supports MT4, MT5, Binance
-          </p>
         </div>
-        <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={loading} />
+        <input type="file" className="hidden" accept="image/*" multiple onChange={handleFileChange} disabled={loading} />
       </label>
       {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}
     </div>
   );
-}
-
-function parseTradeText(text: string): Partial<TradeInput>[] {
-  const lines = text.split('\n');
-  const trades: Partial<TradeInput>[] = [];
-  
-  // Regex patterns
-  const assetRegex = /\b([A-Z]{3}[\/]?[A-Z]{3}|BTCUSDT|ETHUSDT|XAUUSD|US30|NAS100)\b/i;
-  const volumeRegex = /\b(0\.\d{1,2}|[1-9]\d*\.?\d*)\b/; // Matches 0.01, 1.0, 10
-  
-  // Iterate lines to find trade rows
-  // Assumption: A single line often contains Asset + Type + Volume in history views
-  // OR standard MT4/5 format
-  
-  for (const line of lines) {
-      const assetMatch = line.match(assetRegex);
-      if (!assetMatch) continue;
-
-      const volumeMatch = line.match(volumeRegex);
-      
-      // Look for numbers that might be prices
-      // Exclude the volume match from price search if possible, but regex reuse is tricky
-      // Simple approach: Find all numbers
-      const numbers = line.match(/\d+\.\d+/g)?.map(Number) || [];
-      
-      // Heuristic: If we have Asset, we have a potential trade
-      if (assetMatch) {
-          const trade: Partial<TradeInput> = {
-              asset: assetMatch[0].toUpperCase(),
-          };
-
-          // If we found volume (small number usually < 100 for forex/gold, but could be large for indices)
-          // Let's assume the smallest number in the line that matches volume format is volume
-          if (volumeMatch) {
-             trade.positionSize = parseFloat(volumeMatch[0]);
-          }
-
-          // Prices: Entry, SL, TP, Close
-          // Usually Entry is near the Asset or Type
-          // If we have multiple numbers, assign them heuristically
-          // This is hard without column coordinates.
-          // Let's just grab the first valid-looking price as entry
-          const prices = numbers.filter(n => n !== trade.positionSize);
-          if (prices.length > 0) trade.entryPrice = prices[0];
-          if (prices.length > 1) trade.stopLoss = prices[1]; // Very risky assumption
-          
-          // Try to find P/L (often negative, at the end)
-          const plMatch = line.match(/-?\d+\.\d{2}\b$/);
-          if (plMatch) {
-              trade.lossAmount = parseFloat(plMatch[0]);
-          }
-
-          trades.push(trade);
-      }
-  }
-
-  // Fallback: If no structured trades found, try the old "whole text" method as a single trade
-  if (trades.length === 0) {
-      const singleResult: Partial<TradeInput> = {};
-      const assetMatch = text.match(/\b[A-Z]{3}[\/]?[A-Z]{3}\b|\bBTCUSDT\b|\bETHUSDT\b/);
-      if (assetMatch) {
-          singleResult.asset = assetMatch[0];
-          trades.push(singleResult);
-      }
-  }
-
-  return trades;
 }

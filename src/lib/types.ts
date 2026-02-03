@@ -21,6 +21,18 @@ export type TradeInput = {
   leverage?: number;
   timeframe: string;
   lossAmount?: number;
+  direction?: 'buy' | 'sell';
+  timestamp?: number;
+};
+
+export type AccountSummary = {
+  netPnl: number;
+  tradeCount: number;
+  winRate: number;
+  largestLoss: number;
+  avgLot: number;
+  overtradingScore: number; // 0-100
+  riskStacking?: boolean;
 };
 
 export type AnalysisResult = {
@@ -37,6 +49,15 @@ export type AnalysisResult = {
   asset: string;
   accountSize: number;
   lossAmount: number;
+  // New fields for batch analysis
+  isBatch?: boolean;
+  accountSummary?: AccountSummary;
+};
+
+export type InferenceResult = {
+  trades: Partial<TradeInput>[];
+  accountSummary: AccountSummary;
+  confidence: 'high' | 'medium' | 'low';
 };
 
 export type PropFirm = 'FTMO' | 'MyFundedFX' | 'FundingPips' | 'None';
