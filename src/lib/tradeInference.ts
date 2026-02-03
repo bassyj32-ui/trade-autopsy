@@ -4,15 +4,16 @@ import { TradeInput, InferenceResult, AccountSummary } from './types';
 // Regex Patterns for various platforms (MT4, MT5, cTrader)
 const PATTERNS = {
   // Common Assets
-  asset: /\b([A-Z]{3}\/?[A-Z]{3}|XAU[A-Z]{3}|XAG[A-Z]{3}|BTC\w+|ETH\w+|US30|NAS100|SPX500|GER30)\b/i,
+  // Added more crypto and indices variations
+  asset: /\b([A-Z]{3}\/?[A-Z]{3}|XAU[A-Z]{3}|XAG[A-Z]{3}|BTC\w*|ETH\w*|US30|NAS100|SPX500|GER30|DE30|DE40|USTEC|US500|DOW|US100|NDX)\b/i,
   
   // Directions
   buy: /\b(buy|long)\b/i,
   sell: /\b(sell|short)\b/i,
 
   // Numbers (Volume, Price, PnL)
-  // Careful to avoid dates or IDs.
   // We look for patterns like "0.10", "1.00", "100.50", "-50.00"
+  // Exclude simple integers that might be ticket numbers unless they look like money
   decimalNumber: /-?\d+[\.,]\d{2,}/g, 
   
   // Specific Lot Size detection (usually small numbers 0.01 - 100.00)
@@ -22,9 +23,14 @@ const PATTERNS = {
   time: /\b(\d{2}:\d{2})\b/
 };
 
+// Keywords to ignore lines (headers, balances)
+const IGNORE_KEYWORDS = ['balance', 'credit', 'total', 'deposit', 'withdrawal', 'margin', 'free margin'];
+
 export function inferTradesFromText(inputs: string | string[]): InferenceResult {
   const texts = Array.isArray(inputs) ? inputs : [inputs];
   let allTrades: Partial<TradeInput>[] = [];
+
+  console.log(`[TradeInference] Starting analysis on ${texts.length} text blocks.`);
 
   // 1. Parse each text block
   for (const text of texts) {
@@ -32,15 +38,19 @@ export function inferTradesFromText(inputs: string | string[]): InferenceResult 
     allTrades = [...allTrades, ...trades];
   }
 
+  console.log(`[TradeInference] Total raw trades detected: ${allTrades.length}`);
+
   // 2. Remove exact duplicates (same asset, same entry, same PnL)
-  // Simple de-dupe logic
   const uniqueTrades = allTrades.filter((trade, index, self) => 
     index === self.findIndex((t) => (
       t.asset === trade.asset &&
       t.entryPrice === trade.entryPrice &&
-      t.lossAmount === trade.lossAmount
+      t.lossAmount === trade.lossAmount &&
+      t.lossAmount !== 0 // Keep multiple 0s? unlikely to be useful but ok.
     ))
   );
+
+  console.log(`[TradeInference] Unique trades after dedupe: ${uniqueTrades.length}`);
 
   // 3. Calculate Account Summary & Heuristics
   const summary = calculateSummary(uniqueTrades);
@@ -56,67 +66,85 @@ function parseSingleText(text: string): Partial<TradeInput>[] {
   const lines = text.split('\n');
   const trades: Partial<TradeInput>[] = [];
 
-  for (const line of lines) {
-    const cleanLine = line.trim();
-    if (cleanLine.length < 10) continue; // Skip short noise
+  console.log(`[TradeInference] Parsing block with ${lines.length} lines.`);
 
-    const assetMatch = cleanLine.match(PATTERNS.asset);
-    if (!assetMatch) continue;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.length < 10) continue; // Skip short noise
 
-    // Potential Trade Found
-    const trade: Partial<TradeInput> = {
-      asset: assetMatch[0].toUpperCase().replace('/', ''),
-      entryPrice: 0,
-      stopLoss: 0,
-      takeProfit: 0,
-      lossAmount: 0,
-      positionSize: 0,
-      direction: 'buy' // default
-    };
+    // Debug log first few lines
+    if (i < 5) console.log(`[TradeInference] Line ${i}: ${line}`);
 
-    // Determine Direction
-    if (PATTERNS.sell.test(cleanLine)) trade.direction = 'sell';
+    // Check Ignore Keywords
+    if (IGNORE_KEYWORDS.some(k => line.toLowerCase().includes(k))) {
+        console.log(`[TradeInference] Skipping ignore line: ${line}`);
+        continue;
+    }
 
-    // Extract all numbers
-    const numberMatches = cleanLine.match(PATTERNS.decimalNumber);
+    // 1. Asset Detection (Crucial)
+    const assetMatch = line.match(PATTERNS.asset);
+    if (!assetMatch) {
+        // If no asset, it's not a trade row we can process reliably
+        continue;
+    }
+
+    const asset = assetMatch[0].toUpperCase().replace('/', '');
+    
+    // 2. Extract Numbers
+    const numberMatches = line.match(PATTERNS.decimalNumber);
     const numbers = numberMatches ? numberMatches.map(n => parseFloat(n.replace(',', ''))) : [];
 
-    if (numbers.length === 0) continue;
+    // If we don't have enough numbers, it's probably not a full trade row
+    // We need at least: Lot, Price, Profit (3 numbers) OR Lot, Profit (2 numbers min)
+    if (numbers.length < 2) continue;
 
-    // Heuristic Field Assignment
+    const trade: Partial<TradeInput> = {
+      asset,
+      direction: 'buy', // default
+      entryPrice: 0,
+      lossAmount: 0,
+      positionSize: 0.1
+    };
+
+    // 3. Direction
+    if (PATTERNS.sell.test(line)) trade.direction = 'sell';
+
+    // 4. Heuristic Field Assignment
     
-    // 1. PnL: Usually the last number in the row (especially in history views)
-    // Or the largest negative number if it's a loss
+    // PROFIT: The LAST number in the row is almost always the Profit/Loss in MT4/MT5 history
     const lastNum = numbers[numbers.length - 1];
-    trade.lossAmount = lastNum; // Provisional
+    
+    // Sanity check: Profit shouldn't be a massive number relative to others if it's a price
+    // But in crypto/indices, prices are big.
+    // However, Profit is usually the *last* column.
+    trade.lossAmount = lastNum;
 
-    // 2. Volume: Usually small positive number (0.01 - 50.0)
-    // Exclude the PnL value from search
-    const potentialVolumes = numbers.filter(n => 
+    // LOT SIZE: Look for small number (0.01 - 500) that isn't the Profit
+    // Usually the first small number in the sequence
+    const potentialLots = numbers.filter(n => 
         n !== lastNum && 
         n > 0 && 
-        n < 1000 && // Cap for lots (indices might be higher but usually integers)
-        (n % 1 === 0 || n.toString().includes('.')) // Must look like a number
+        n < 1000 && // Cap for lots
+        Math.abs(n) !== Math.abs(trade.lossAmount!) // distinct from PnL
     );
 
-    if (potentialVolumes.length > 0) {
-        // First valid small number is likely lots
-        trade.positionSize = potentialVolumes[0];
-    } else {
-        // Fallback default
-        trade.positionSize = 0.1; 
+    if (potentialLots.length > 0) {
+        trade.positionSize = potentialLots[0];
     }
 
-    // 3. Prices: Remaining numbers that are not Volume or PnL
-    const prices = numbers.filter(n => n !== trade.lossAmount && n !== trade.positionSize);
-    if (prices.length > 0) trade.entryPrice = Math.abs(prices[0]);
-    if (prices.length > 1) trade.stopLoss = Math.abs(prices[1]); // Guess
+    // ENTRY PRICE: Number that is not Lot and not Profit
+    // If multiple remain, usually Open Price, SL, TP, Close Price
+    // We take the first remaining one as Open Price
+    const potentialPrices = numbers.filter(n => 
+        n !== lastNum && 
+        n !== trade.positionSize
+    );
 
-    // Timestamp inference (basic)
-    if (PATTERNS.time.test(cleanLine)) {
-        trade.timestamp = Date.now(); // Placeholder, hard to parse relative dates reliably without OCR date context
+    if (potentialPrices.length > 0) {
+        trade.entryPrice = Math.abs(potentialPrices[0]);
     }
 
+    console.log(`[TradeInference] Detected Trade: ${trade.asset} ${trade.direction} ${trade.positionSize} lots, PnL: ${trade.lossAmount}`);
     trades.push(trade);
   }
   
@@ -141,9 +169,6 @@ function calculateSummary(trades: Partial<TradeInput>[]): AccountSummary {
   let largestLoss = 0;
   let totalLots = 0;
   let increasingLotsCount = 0;
-  
-  // Sort by assumed order (if we had timestamps, we'd sort. array order is proxy)
-  // Check for "Revenge Trading" pattern: Loss -> Next Trade Larger Lot
   
   for (let i = 0; i < trades.length; i++) {
       const t = trades[i];
@@ -171,13 +196,8 @@ function calculateSummary(trades: Partial<TradeInput>[]): AccountSummary {
   const avgLot = totalLots / trades.length;
 
   // Overtrading Score (0-100)
-  // Heuristic: > 10 trades in this batch = high
-  // Or high density (not easily measured without exact times, but count is a proxy)
   let overtradingScore = Math.min((trades.length / 20) * 100, 100); 
   
-  // Risk Stacking
-  // If we have multiple open trades on same asset? (Hard to know if open/closed from simple text)
-  // We'll use the Revenge Trading count as a proxy for "Risk Discipline"
   if (increasingLotsCount > 1) {
       overtradingScore += 20; // Penalty for martingale/revenge
   }

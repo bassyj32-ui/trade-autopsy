@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
 import { TradeInput, PropFirm, InferenceResult } from '../lib/types';
 import { PROP_FIRM_RULES, ASSETS, LOT_SUGGESTIONS } from '../lib/constants';
 import { ScreenshotUpload } from './ScreenshotUpload';
-import { AlertTriangle, TrendingUp, TrendingDown, DollarSign, Target, Activity, Skull, Calculator, Layers } from 'lucide-react';
+import { AlertTriangle, DollarSign, Activity, Skull, Calculator } from 'lucide-react';
 
 interface TradeFormProps {
   onAnalyze: (input: TradeInput | InferenceResult, propFirm: PropFirm) => void;
@@ -49,10 +50,30 @@ export function TradeForm({ onAnalyze }: TradeFormProps) {
   };
 
   const handleOcrResult = (result: InferenceResult) => {
+    console.log("[TradeForm] OCR Result received:", result);
+    
     if (result.trades.length >= 5) {
+        console.log("[TradeForm] Switching to Batch Mode (Account Level Autopsy)");
         setIsBatchMode(true);
         setBatchData(result);
         setDetectedTrades(result.trades);
+        
+        // AUTO-ANALYZE for Batch Mode as requested
+        // We use default form data (10000 account size, None prop firm) if user hasn't touched them
+        // But to be safe, we'll wait for user to confirm Account Size? 
+        // User said: "Skip TradeForm entirely. Run account-level autopsy automatically"
+        // So we should probably just GO.
+        
+        const enrichedBatchData = {
+            ...result,
+            userAccountSize: formData.accountSize // use current state (default 10000 or whatever user set)
+        };
+        
+        // We need to call onAnalyze. But this is inside an async callback from upload.
+        // Let's defer it slightly to allow state to settle or just call it directly.
+        // Calling directly.
+        onAnalyze(enrichedBatchData as unknown as InferenceResult & { userAccountSize: number }, propFirm);
+        
     } else {
         setIsBatchMode(false);
         setBatchData(null);
@@ -60,6 +81,7 @@ export function TradeForm({ onAnalyze }: TradeFormProps) {
         
         // Auto-fill first trade if available
         if (result.trades.length > 0) {
+            console.log("[TradeForm] Single trade detected, auto-filling form");
             setFormData(prev => ({ ...prev, ...result.trades[0] }));
         }
     }
@@ -152,6 +174,14 @@ export function TradeForm({ onAnalyze }: TradeFormProps) {
                             {batchData.accountSummary.winRate.toFixed(1)}%
                         </p>
                     </div>
+                    <div className="col-span-2 text-center">
+                         <button 
+                            type="submit"
+                            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-all animate-pulse"
+                         >
+                            RUN AUTOPSY NOW
+                         </button>
+                    </div>
                 </div>
             )}
 
@@ -199,86 +229,61 @@ export function TradeForm({ onAnalyze }: TradeFormProps) {
                         <optgroup label="Crypto">
                             {ASSETS.filter(a => a.type === 'crypto').map(a => <option key={a.symbol} value={a.symbol}>{a.symbol}</option>)}
                         </optgroup>
-                        <optgroup label="Commodities">
-                            {ASSETS.filter(a => a.type === 'commodity').map(a => <option key={a.symbol} value={a.symbol}>{a.symbol}</option>)}
-                        </optgroup>
                         <optgroup label="Indices">
                             {ASSETS.filter(a => a.type === 'index').map(a => <option key={a.symbol} value={a.symbol}>{a.symbol}</option>)}
                         </optgroup>
                       </select>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium text-green-500 flex items-center gap-1">
-                          <TrendingUp className="w-3 h-3" /> Entry
-                        </label>
+                        <label className="text-sm font-medium text-muted-foreground">Entry Price</label>
                         <input
                           type="number"
-                          step="any"
-                          value={formData.entryPrice || ''}
+                          step="0.00001"
+                          value={formData.entryPrice}
                           onChange={e => setFormData({ ...formData, entryPrice: Number(e.target.value) })}
-                          className="w-full mt-1 bg-muted border-none rounded-lg py-2 px-3 text-foreground focus:ring-2 focus:ring-green-500"
+                          className="w-full mt-1 bg-muted border-none rounded-lg py-2 px-4 text-foreground focus:ring-2 focus:ring-red-500"
                           required
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-red-500 flex items-center gap-1">
-                          <TrendingDown className="w-3 h-3" /> Stop Loss
-                          {formData.lossAmount && <span className="text-xs text-muted-foreground ml-auto font-normal">(Opt)</span>}
-                        </label>
+                        <label className="text-sm font-medium text-muted-foreground">Position Size (Lots)</label>
                         <input
                           type="number"
-                          step="any"
-                          value={formData.stopLoss || ''}
-                          onChange={e => setFormData({ ...formData, stopLoss: Number(e.target.value) })}
-                          className="w-full mt-1 bg-muted border-none rounded-lg py-2 px-3 text-foreground focus:ring-2 focus:ring-red-500"
-                          required={!formData.lossAmount}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-blue-500 flex items-center gap-1">
-                          <Target className="w-3 h-3" /> TP (Opt)
-                        </label>
-                        <input
-                          type="number"
-                          step="any"
-                          value={formData.takeProfit || ''}
-                          onChange={e => setFormData({ ...formData, takeProfit: Number(e.target.value) })}
-                          className="w-full mt-1 bg-muted border-none rounded-lg py-2 px-3 text-foreground focus:ring-2 focus:ring-blue-500"
+                          step="0.01"
+                          value={formData.positionSize}
+                          onChange={e => setFormData({ ...formData, positionSize: Number(e.target.value) })}
+                          className="w-full mt-1 bg-muted border-none rounded-lg py-2 px-4 text-foreground focus:ring-2 focus:ring-red-500"
+                          required
                         />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                            <Calculator className="w-3 h-3" /> Lot Size
-                        </label>
+                        <label className="text-sm font-medium text-muted-foreground">Stop Loss</label>
                         <input
                           type="number"
-                          step="any"
-                          list="lot-suggestions"
-                          value={formData.positionSize}
-                          onChange={e => setFormData({ ...formData, positionSize: Number(e.target.value) })}
+                          step="0.00001"
+                          value={formData.stopLoss}
+                          onChange={e => setFormData({ ...formData, stopLoss: Number(e.target.value) })}
                           className="w-full mt-1 bg-muted border-none rounded-lg py-2 px-4 text-foreground focus:ring-2 focus:ring-red-500"
-                          required
+                          // Not required if we have lossAmount (heuristic)
+                          required={!formData.lossAmount}
                         />
-                        <datalist id="lot-suggestions">
-                            {suggestions.map(s => <option key={s} value={s} />)}
-                        </datalist>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Timeframe</label>
-                        <select
-                          value={formData.timeframe}
-                          onChange={e => setFormData({ ...formData, timeframe: e.target.value })}
+                        <label className="text-sm font-medium text-muted-foreground">Take Profit</label>
+                        <input
+                          type="number"
+                          step="0.00001"
+                          value={formData.takeProfit}
+                          onChange={e => setFormData({ ...formData, takeProfit: Number(e.target.value) })}
                           className="w-full mt-1 bg-muted border-none rounded-lg py-2 px-4 text-foreground focus:ring-2 focus:ring-red-500"
-                        >
-                          {['1m', '5m', '15m', '1h', '4h', '1d'].map(tf => (
-                            <option key={tf} value={tf}>{tf}</option>
-                          ))}
-                        </select>
+                          // Not required if we have lossAmount
+                          required={!formData.lossAmount}
+                        />
                       </div>
                     </div>
                 </>
@@ -286,29 +291,41 @@ export function TradeForm({ onAnalyze }: TradeFormProps) {
 
             <button
               type="submit"
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-lg shadow-lg hover:shadow-red-500/20 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 text-lg"
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2"
             >
-              {isBatchMode ? (
-                  <>
-                    <Layers className="w-6 h-6" />
-                    ANALYZE ACCOUNT DEATH
-                  </>
-              ) : (
-                  <>
-                    <Skull className="w-6 h-6" />
-                    ANALYZE MY DEATH
-                  </>
-              )}
+              <Skull className="w-5 h-5" />
+              {isBatchMode ? 'CONFIRM BATCH AUTOPSY' : 'PERFORM AUTOPSY'}
             </button>
           </form>
         </div>
 
-        <div className="hidden md:block w-px bg-border" />
+        <div className="hidden md:block w-80 space-y-6">
+            {/* Sidebar content... maybe tips or lot size calc? */}
+             <div className="bg-muted/30 p-4 rounded-lg border border-muted">
+                <h3 className="text-sm font-bold uppercase text-muted-foreground mb-3 flex items-center gap-2">
+                    <Calculator className="w-4 h-4" />
+                    Standard Lots
+                </h3>
+                <div className="space-y-2">
+                    {Object.entries(suggestions).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-sm">
+                            <span className="text-muted-foreground capitalize">{key}</span>
+                            <span className="font-mono">{value}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
 
-        <div className="hidden md:flex flex-1 flex-col justify-center items-center text-center p-8 opacity-50">
-           <AlertTriangle className="w-24 h-24 text-muted-foreground mb-4" />
-           <h3 className="text-xl font-bold">Prepare for the truth</h3>
-           <p className="text-muted-foreground">We don't sugarcoat it. If you traded poorly, we will tell you.</p>
+            <div className="bg-yellow-500/10 p-4 rounded-lg border border-yellow-500/20">
+                <h3 className="text-sm font-bold uppercase text-yellow-500 mb-2 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    Warning
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                    Trading involves substantial risk of loss. 
+                    {isBatchMode ? ' analyzing multiple trades allows us to detect behavioral patterns like overtrading and revenge trading.' : ' Most traders lose money because they do not understand leverage.'}
+                </p>
+            </div>
         </div>
       </div>
     </div>

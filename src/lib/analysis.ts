@@ -40,43 +40,43 @@ function analyzeBatch(input: InferenceResult & { userAccountSize: number }, prop
 
     // 3. Determine Cause of Death (Batch)
     let causeOfDeath = "Death by a Thousand Cuts";
-    let verdict = "You bled out slowly. No discipline.";
-    let fix = ["Stop overtrading", "Set a daily loss limit", "Walk away after 2 losses"];
+    let verdict = "You didn't just lose. You bled out slowly, trade by trade, refusing to apply a tourniquet.";
+    let fix = ["Stop overtrading immediately", "Set a hard daily loss limit", "Walk away after 2 consecutive losses"];
 
     if (propFirmViolation) {
-        causeOfDeath = "Prop Firm Execution";
-        verdict = `You would have failed ${propFirm === 'None' ? 'a prop firm' : propFirm} before you finished your coffee. ${propFirmViolation}`;
-        fix = ["Respect the drawdown limits", "Size down significantly", "Read the rules again"];
+        causeOfDeath = "Instant Disqualification";
+        verdict = `Congratulations. You failed ${propFirm === 'None' ? 'the prop firm' : propFirm} faster than it takes to fill out the application. ${propFirmViolation}`;
+        fix = ["Respect the drawdown limits or quit", "Size down by 90%", "Read the rules before you burn cash"];
     } else if (accountSummary.riskStacking) {
         causeOfDeath = "Martingale Suicide";
-        verdict = "You kept adding to losers (or increasing size after losses). This works until it doesn't. Today, it didn't.";
-        fix = ["Never add to a loser", "Reset risk after a loss", "Accept the L"];
+        verdict = "You kept adding to losers. That's not trading, that's a ego problem. You tried to fight the market to get your money back, and the market crushed you.";
+        fix = ["Never add to a losing position", "Reset risk to 0.5% after a loss", "Accept the L before it becomes a blow-up"];
     } else if (accountSummary.overtradingScore > 70) {
-        causeOfDeath = "Dopamine Addiction";
-        verdict = `You took ${accountSummary.tradeCount} trades. This wasn't strategy. This was dopamine seeking behavior.`;
-        fix = ["Limit yourself to 3 trades/day", "Trade higher timeframes", "Get a hobby"];
+        causeOfDeath = "Terminal Dopamine Addiction";
+        verdict = `You took ${accountSummary.tradeCount} trades. You're not a hedge fund algorithm. You're a bored gambler clicking buttons for a hit.`;
+        fix = ["Limit yourself to 3 trades/day MAX", "Trade higher timeframes (4H+)", "Get a hobby that isn't burning money"];
     } else if (accountSummary.winRate < 30) {
-        causeOfDeath = "Coin Flipper";
-        verdict = `Your win rate is ${accountSummary.winRate.toFixed(1)}%. A blind monkey throwing darts does better (50%).`;
-        fix = ["Backtest your strategy", "Stop guessing", "Follow the trend"];
-    } else if (accountSummary.avgLot > 0 && (accountSummary.largestLoss / accountSummary.avgLot) > 1000) { // Rough heuristic for huge relative loss
+        causeOfDeath = "Inverse Guru";
+        verdict = `Your win rate is ${accountSummary.winRate.toFixed(1)}%. If you had simply done the EXACT OPPOSITE of every instinct you had, you'd be rich.`;
+        fix = ["Backtest your strategy (it sucks)", "Stop guessing tops and bottoms", "Trade with the trend, not against it"];
+    } else if (accountSummary.avgLot > 0 && (accountSummary.largestLoss / accountSummary.avgLot) > 1000) { 
         causeOfDeath = "Ego Trading";
-        verdict = "You refused to be wrong. One bad trade wiped out ten good ones.";
-        fix = ["Use a hard stop loss", "Leave your ego at the door"];
+        verdict = "You refused to be wrong. One bad trade wiped out weeks of progress because you couldn't admit you made a mistake.";
+        fix = ["Use a hard stop loss every time", "Leave your ego at the door", "Define your risk BEFORE entering"];
     }
 
     return {
-        riskPercentage: maxDrawdownPercent, // showing max single risk equivalent
-        riskRewardRatio: 0, // N/A for batch
-        stopDistancePercentage: 0, // N/A
-        leverageExposure: 0, // Hard to calc without more data
+        riskPercentage: maxDrawdownPercent, 
+        riskRewardRatio: 0, 
+        stopDistancePercentage: 0, 
+        leverageExposure: 0, 
         verdict,
         causeOfDeath,
         fix,
         propFirmViolation,
         date: new Date().toISOString(),
         id: crypto.randomUUID(),
-        asset: "Multiple",
+        asset: "Multiple Assets",
         accountSize: userAccountSize,
         lossAmount: Math.abs(accountSummary.netPnl),
         isBatch: true,
@@ -94,13 +94,13 @@ function analyzeSingle(input: TradeInput, propFirm: PropFirm): AnalysisResult {
 
   // Realistic Contract Size Assumptions
   if (assetType === 'forex') {
-      quantity = positionSize * 100000; // Standard Lot = 100k units
+      quantity = positionSize * 100000; 
   } else if (assetType === 'commodity') {
-      if (asset.includes('XAU')) quantity = positionSize * 100; // Gold 100oz
-      else if (asset.includes('XAG')) quantity = positionSize * 5000; // Silver 5000oz
-      else if (asset.includes('WTI')) quantity = positionSize * 1000; // Oil 1000 barrels
+      if (asset.includes('XAU')) quantity = positionSize * 100; 
+      else if (asset.includes('XAG')) quantity = positionSize * 5000; 
+      else if (asset.includes('WTI')) quantity = positionSize * 1000; 
   } else if (assetType === 'index') {
-      quantity = positionSize; // Treating as 1 unit for MVP.
+      quantity = positionSize; 
   }
 
   let totalRisk = 0;
@@ -148,41 +148,41 @@ function analyzeSingle(input: TradeInput, propFirm: PropFirm): AnalysisResult {
   }
 
   // 6. Determine Cause of Death (Brutal Copy Upgrade)
-  let causeOfDeath = "Direction Wrong";
-  let verdict = "Direction wasn't the problem. Timing was.";
-  let fix = ["Check your bias", "Wait for confirmation"];
+  let causeOfDeath = "Blind Speculation";
+  let verdict = "You entered this trade with hope, not a plan. The market charged you for that arrogance.";
+  let fix = ["Identify your edge", "Wait for clear confirmation", "Don't trade if you don't know why"];
 
   // Priority 1: Position Size / Prop Firm Kill
   if (propFirmViolation || riskPercentage > (rules.dailyDrawdown * 100 || 10)) {
-       causeOfDeath = "Position Size Kill";
+       causeOfDeath = "Size Queen";
        verdict = propFirmViolation 
-          ? `You would have failed ${propFirm} before your second trade. ${propFirmViolation}`
-          : `Direction wasn't the problem. Size was. You risked ${riskPercentage.toFixed(1)}% on one trade.`;
+          ? `You blew the ${propFirm} challenge instantly. ${propFirmViolation} You don't deserve capital.`
+          : `You risked ${riskPercentage.toFixed(1)}% on a single trade. That's not trading, that's lighting money on fire.`;
        fix = ["Cut position size by 90%", "Use a position size calculator", "Respect the drawdown limits"];
   }
   // Priority 2: Over-Leverage
   else if (leverageExposure > 50) { 
-      causeOfDeath = "Over-Leverage";
-      verdict = `DEATH BY MARGIN. ${leverageExposure.toFixed(1)}x leverage? You're not a bank. One wick and you're gone.`;
-      fix = ["Reduce leverage to max 10x", "Focus on notional value, not margin"];
+      causeOfDeath = "Leverage Junkie";
+      verdict = `DEATH BY MARGIN. ${leverageExposure.toFixed(1)}x leverage? You're not a bank. You're a liquidity provider for people who actually know what they're doing.`;
+      fix = ["Reduce leverage to max 10x", "Focus on notional value, not margin", "Stop trying to get rich quick"];
   }
   // Priority 3: Stop Too Tight
   else if ((assetType === 'forex' && stopDistancePercentage < 0.05) || (assetType === 'crypto' && stopDistancePercentage < 0.5)) {
-       causeOfDeath = "Stop Hunted";
-       verdict = "You choked the trade. Your stop was so tight the spread alone probably killed you.";
-       fix = ["Base stop loss on ATR", "Give the trade room to breathe"];
+       causeOfDeath = "Market Maker's Lunch";
+       verdict = "Your stop was so tight the spread alone probably killed you. You tried to be perfect and got wrecked.";
+       fix = ["Base stop loss on ATR", "Give the trade room to breathe", "Stop trying to snipe tops/bottoms"];
   }
   // Priority 4: Bad R:R
   else if (takeProfit && riskRewardRatio < 1.0) {
-      causeOfDeath = "Negative R:R";
-      verdict = `Mathematical suicide. Risking $1 to make $${riskRewardRatio.toFixed(2)}? Your edge died before you entered.`;
-      fix = ["Target at least 1:2 R:R", "Don't take trades with poor upside"];
+      causeOfDeath = "Mathematical Suicide";
+      verdict = `Risking $1 to make $${riskRewardRatio.toFixed(2)}? Even if you win, you lose long term. The math guarantees your bankruptcy.`;
+      fix = ["Target at least 1:2 R:R", "Don't take trades with poor upside", "Wait for better setups"];
   }
   // Priority 5: Emotional Trade
   else if (riskPercentage > 2 && ["1m", "5m"].includes(timeframe) && !takeProfit) {
        causeOfDeath = "Emotional Tilt";
-       verdict = "This wasn't strategy. This was dopamine. Scalping with high risk and no plan is just gambling.";
-       fix = ["Step away after a loss", "Plan trade before entering", "Stop scalping without a system"];
+       verdict = "Scalping on the 1-minute chart with high risk? This was a dopamine hit, not a trade. Seek help.";
+       fix = ["Step away after a loss", "Plan trade before entering", "Stop scalping without a proven system"];
   }
   
   return {

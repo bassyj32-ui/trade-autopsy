@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { AnalysisResult } from '../lib/types';
 import html2canvas from 'html2canvas';
-import { Download, RotateCcw, Share2 } from 'lucide-react';
+import { Download, RotateCcw, Share2, Skull, AlertTriangle, Flame, Zap } from 'lucide-react';
 import { getCertificateType, CERTIFICATE_THEMES } from '../lib/certificates';
 
 interface AutopsyReportProps {
@@ -55,7 +55,7 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
                 link.download = `autopsy-${result.id}.png`;
                 link.href = canvas.toDataURL('image/png');
                 link.click();
-                alert("Image saved! Share it manually.");
+                alert("Image saved! Upload this to X/Twitter manually.");
             }
         }, 'image/png');
     } catch (e) {
@@ -65,6 +65,24 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
 
   const type = getCertificateType(result);
   const theme = CERTIFICATE_THEMES[type];
+
+  // Determine Behavioral Badges
+  const badges = [];
+  if (result.accountSummary?.riskStacking) {
+      badges.push({ label: "RISK STACKER", color: "bg-red-600 text-white", icon: <Flame className="w-3 h-3" /> });
+  }
+  if (result.accountSummary && result.accountSummary.overtradingScore > 70) {
+      badges.push({ label: "CHRONIC OVERTRADER", color: "bg-orange-500 text-white", icon: <Zap className="w-3 h-3" /> });
+  }
+  if (result.riskPercentage > 5) {
+      badges.push({ label: "DEGENERATE GAMBLER", color: "bg-purple-600 text-white", icon: <Skull className="w-3 h-3" /> });
+  }
+  if (result.accountSummary && result.accountSummary.winRate < 30) {
+      badges.push({ label: "LIQUIDITY DONOR", color: "bg-green-600 text-white", icon: <Download className="w-3 h-3" /> });
+  }
+  if (result.causeOfDeath === "Emotional Tilt") {
+      badges.push({ label: "EMOTIONALLY UNSTABLE", color: "bg-pink-600 text-white", icon: <AlertTriangle className="w-3 h-3" /> });
+  }
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
@@ -120,6 +138,21 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
                 </div>
             </div>
 
+            {/* Psychological Profile (Badges) */}
+            {badges.length > 0 && (
+                <div className="mb-8 relative z-10">
+                    <h3 className="text-xs font-bold uppercase text-slate-500 mb-2">Psychological Profile / Flags</h3>
+                    <div className="flex flex-wrap gap-2">
+                        {badges.map((badge, i) => (
+                            <div key={i} className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide ${badge.color} shadow-sm border border-black/10`}>
+                                {badge.icon}
+                                {badge.label}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Cause of Death Section */}
             <div className="mb-8 relative z-10">
                 <h3 className="text-lg font-black uppercase bg-slate-900 text-white px-2 py-1 inline-block mb-4">Official Cause of Death</h3>
@@ -135,7 +168,7 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
             <div className="mb-8 relative z-10 flex-grow">
                 <h3 className="text-lg font-black uppercase bg-slate-900 text-white px-2 py-1 inline-block mb-4">Coroner's Verdict</h3>
                 <div className="font-mono text-sm md:text-base leading-relaxed p-6 bg-slate-200/50 border border-slate-300 rounded-sm relative">
-                    <p className="mb-4">"{result.verdict}"</p>
+                    <p className="mb-4 font-bold">"{result.verdict}"</p>
                     <div className="space-y-2 mt-6">
                         <p className="font-bold underline text-xs uppercase text-slate-500">Corrective Measures (If Resuscitated):</p>
                         <ul className="list-disc list-inside text-xs md:text-sm">
@@ -167,7 +200,7 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
                 <RotateCcw className="w-5 h-5" /> Analyze Another
             </button>
             <button onClick={handleShare} className="flex items-center justify-center gap-2 px-6 py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold shadow-lg shadow-sky-900/20 transition-all hover:scale-105">
-                <Share2 className="w-5 h-5" /> Share on X
+                <Share2 className="w-5 h-5" /> Share Your Shame
             </button>
             <button onClick={handleDownload} className="flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow-lg shadow-red-900/20 transition-all hover:scale-105">
                 <Download className="w-5 h-5" /> Download Certificate
