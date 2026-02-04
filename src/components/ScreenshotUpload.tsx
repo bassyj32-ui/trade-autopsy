@@ -24,26 +24,38 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
     try {
       const texts: string[] = [];
       
+      const upscaleImage = async (file: File): Promise<Blob> => {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        await img.decode();
+      
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * 2;
+        canvas.height = img.height * 2;
+      
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      
+        return new Promise(resolve => 
+          canvas.toBlob(b => resolve(b!), 'image/png')
+        );
+      };
+
       // Process files sequentially to avoid browser lag
       for (let i = 0; i < files.length; i++) {
           const file = files[i];
           
-          // Note: In a real "AI First" flow, we might want to batch this to Gemini if it supports multiple images
-          // But for now, we'll assume OCR is the robust batch fallback as requested.
-          // Or we can try AI for the first one and OCR for the rest?
-          // Let's stick to OCR for batch robustness unless Gemini is super fast.
-          // Actually, let's try Gemini on the first image if it's a single upload, 
-          // but for batch, OCR is often faster/cheaper/more reliable for pure text extraction.
-          
-          // Using Tesseract for all for consistency in batch logic for now
-          // (Unless user wants AI on all 80 screenshots? That might hit rate limits)
-          
           console.log(`Processing file ${i + 1}/${files.length}...`);
+          const processedFile = await upscaleImage(file);
           const { data: { text } } = await Tesseract.recognize(
-              file,
-              'eng',
-              { logger: m => console.log(m) }
-          );
+        processedFile,
+        'eng',
+        { 
+          logger: (m: any) => console.log(m),
+          tessedit_char_whitelist: '0123456789.-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ',
+          tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
+        } as any
+      );
           texts.push(text);
       }
       
@@ -51,7 +63,9 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
       const inference = inferTradesFromText(texts);
       
       if (inference.trades.length === 0) {
-          setError("No trades detected in any screenshots.");
+          setError(
+            "No trades detected. Tip: use full MT5 history view, avoid cropped screenshots, and ensure PnL column is visible."
+          );
       } else {
           onResult(inference);
       }

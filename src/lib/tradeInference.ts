@@ -1,58 +1,60 @@
-
 import { TradeInput, InferenceResult, AccountSummary } from './types';
-
-// Regex Patterns for various platforms (MT4, MT5, cTrader)
-const PATTERNS = {
-  // Common Assets
-  // Added more crypto and indices variations
-  asset: /\b([A-Z]{3}\/?[A-Z]{3}|XAU[A-Z]{3}|XAG[A-Z]{3}|BTC\w*|ETH\w*|US30|NAS100|SPX500|GER30|DE30|DE40|USTEC|US500|DOW|US100|NDX)\b/i,
-  
-  // Directions
-  buy: /\b(buy|long)\b/i,
-  sell: /\b(sell|short)\b/i,
-
-  // Numbers (Volume, Price, PnL)
-  // We look for patterns like "0.10", "1.00", "100.50", "-50.00"
-  // Exclude simple integers that might be ticket numbers unless they look like money
-  decimalNumber: /-?\d+[\.,]\d{2,}/g, 
-  
-  // Specific Lot Size detection (usually small numbers 0.01 - 100.00)
-  lotSize: /\b(0\.\d{2}|[1-9]\d{0,2}\.\d{2})\b/,
-  
-  // Time pattern (HH:MM or YYYY.MM.DD)
-  time: /\b(\d{2}:\d{2})\b/
-};
 
 // Keywords to ignore lines (headers, balances)
 const IGNORE_KEYWORDS = ['balance', 'credit', 'total', 'deposit', 'withdrawal', 'margin', 'free margin'];
 
+// Supported platform headers for detection
+enum Platform {
+  MT5 = 'MT5',
+  MT4 = 'MT4',
+  BINANCE = 'Binance',
+  BYBIT = 'Bybit',
+  TRADINGVIEW = 'TradingView',
+  UNKNOWN = 'Unknown',
+}
+
+// Main entry
 export function inferTradesFromText(inputs: string | string[]): InferenceResult {
   const texts = Array.isArray(inputs) ? inputs : [inputs];
   let allTrades: Partial<TradeInput>[] = [];
 
-  console.log(`[TradeInference] Starting analysis on ${texts.length} text blocks.`);
-
-  // 1. Parse each text block
   for (const text of texts) {
-    const trades = parseSingleText(text);
-    allTrades = [...allTrades, ...trades];
+    const platform = detectPlatform(text);
+    let trades: Partial<TradeInput>[] = [];
+
+    console.log(`[TradeInference] Detected Platform: ${platform}`);
+
+    switch (platform) {
+      case Platform.MT5:
+      case Platform.MT4:
+        trades = parseMTText(text);
+        break;
+      case Platform.BINANCE:
+      case Platform.BYBIT:
+        trades = parseCryptoText(text);
+        break;
+      case Platform.TRADINGVIEW:
+        trades = parseTradingViewText(text);
+        break;
+      default:
+        // Unknown platform fallback: try MT parser first, then crypto
+        trades = parseMTText(text);
+        if (trades.length === 0) trades = parseCryptoText(text);
+    }
+
+    allTrades.push(...trades);
   }
 
-  console.log(`[TradeInference] Total raw trades detected: ${allTrades.length}`);
-
-  // 2. Remove exact duplicates (same asset, same entry, same PnL)
-  const uniqueTrades = allTrades.filter((trade, index, self) => 
-    index === self.findIndex((t) => (
+  // Deduplicate
+  const uniqueTrades = allTrades.filter((trade, index, self) =>
+    index === self.findIndex(t =>
       t.asset === trade.asset &&
       t.entryPrice === trade.entryPrice &&
       t.lossAmount === trade.lossAmount &&
-      t.lossAmount !== 0 // Keep multiple 0s? unlikely to be useful but ok.
-    ))
+      t.lossAmount !== 0
+    )
   );
 
-  console.log(`[TradeInference] Unique trades after dedupe: ${uniqueTrades.length}`);
-
-  // 3. Calculate Account Summary & Heuristics
   const summary = calculateSummary(uniqueTrades);
 
   return {
@@ -62,92 +64,130 @@ export function inferTradesFromText(inputs: string | string[]): InferenceResult 
   };
 }
 
-function parseSingleText(text: string): Partial<TradeInput>[] {
-  const lines = text.split('\n');
-  const trades: Partial<TradeInput>[] = [];
+// -------------------- Platform Detection --------------------
+function detectPlatform(text: string): Platform {
+  const lower = text.toLowerCase();
+  if (/\b(mt5|meta trader 5)\b/i.test(lower)) return Platform.MT5;
+  if (/\b(mt4|meta trader 4)\b/i.test(lower)) return Platform.MT4;
+  if (/\b(binance|realized pnl|qty|symbol)\b/i.test(lower)) return Platform.BINANCE;
+  if (/\b(bybit|realized pnl|side|symbol)\b/i.test(lower)) return Platform.BYBIT;
+  if (/\b(tradingview|strategy|entry|exit)\b/i.test(lower)) return Platform.TRADINGVIEW;
+  return Platform.UNKNOWN;
+}
 
-  console.log(`[TradeInference] Parsing block with ${lines.length} lines.`);
+// -------------------- MT4/MT5 Parsing --------------------
+function parseMTText(text: string): Partial<TradeInput>[] {
+  const trades: Partial<TradeInput>[] = [];
+  const MT_ASSETS = /\b(XAUUSD|XAGUSD|BTCUSD|ETHUSD|US30|NAS100|GER40|EURUSD|GBPUSD|USDJPY|AUDUSD|USDCAD|NZDUSD)\b/i;
+
+  const clean = text
+    .replace(/[|]/g, ' ')
+    .replace(/,/g, '.')
+    .replace(/[^\S\r\n]+/g, ' ')
+    .trim();
+
+  const rows = clean.split('\n')
+    .map(r => r.trim())
+    .filter(r => /\b(buy|sell)\b/i.test(r));
+
+  for (const row of rows) {
+    if (IGNORE_KEYWORDS.some(k => row.toLowerCase().includes(k))) continue;
+
+    const assetMatch = row.match(MT_ASSETS);
+    if (!assetMatch) continue;
+    const asset = assetMatch[0].toUpperCase();
+
+    const directionMatch = row.match(/\b(buy|sell)\b/i);
+    if (!directionMatch) continue;
+    const direction = directionMatch[1].toLowerCase() as 'buy' | 'sell';
+
+    const numbers = (row.match(/-?\d+(?:\.\d+)?/g) || [])
+      .map(n => parseFloat(n))
+      .filter(n => !isNaN(n));
+
+    if (numbers.length < 5) continue;
+
+    const pnl = numbers[numbers.length - 1];
+    const positionSize = numbers.find(n => n > 0 && n <= 100) || 0;
+    const entryPrice = numbers.filter(n => n > 1 && n !== pnl && n !== positionSize).sort((a, b) => b - a)[0] || 0;
+
+    trades.push({ asset, direction, positionSize, entryPrice, lossAmount: pnl });
+  }
+
+  return trades;
+}
+
+// -------------------- Crypto Parsing (Binance/Bybit) --------------------
+function parseCryptoText(text: string): Partial<TradeInput>[] {
+  const trades: Partial<TradeInput>[] = [];
+  const CRYPTO_ASSETS = /\b([A-Z]{2,6}USDT|[A-Z]{2,6}USD|BTC|ETH|SOL|XRP)\b/i;
+
+  const lines = text.replace(/[|]/g, ' ').split('\n').map(l => l.trim()).filter(l => l.length > 3);
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (line.length < 10) continue; // Skip short noise
+    const line = lines[i];
 
-    // Debug log first few lines
-    if (i < 5) console.log(`[TradeInference] Line ${i}: ${line}`);
+    if (/\b(realized pnl|realized p&l|pnl)\b/i.test(line)) {
+      const context = lines.slice(Math.max(0, i - 5), i + 2).join(' ');
 
-    // Check Ignore Keywords
-    if (IGNORE_KEYWORDS.some(k => line.toLowerCase().includes(k))) {
-        console.log(`[TradeInference] Skipping ignore line: ${line}`);
-        continue;
+      const pnlMatch = context.match(/[+-]?\d+(\.\d+)?/);
+      if (!pnlMatch) continue;
+      const pnl = parseFloat(pnlMatch[0]);
+
+      const assetMatch = context.match(CRYPTO_ASSETS);
+      if (!assetMatch) continue;
+      const asset = assetMatch[0].toUpperCase();
+
+      const direction: 'buy' | 'sell' | 'unknown' = /\b(long|buy)\b/i.test(context)
+        ? 'buy'
+        : /\b(short|sell)\b/i.test(context)
+        ? 'sell'
+        : 'unknown';
+
+      const sizeMatch = context.match(/\b(Qty|Amount|Size)\s*[:\s]\s*(\d+(\.\d+)?)/i);
+      const positionSize = sizeMatch ? parseFloat(sizeMatch[2]) : 0.1;
+
+      trades.push({ asset, direction, positionSize, entryPrice: 0, lossAmount: pnl });
     }
-
-    // 1. Asset Detection (Crucial)
-    const assetMatch = line.match(PATTERNS.asset);
-    if (!assetMatch) {
-        // If no asset, it's not a trade row we can process reliably
-        continue;
-    }
-
-    const asset = assetMatch[0].toUpperCase().replace('/', '');
-    
-    // 2. Extract Numbers
-    const numberMatches = line.match(PATTERNS.decimalNumber);
-    const numbers = numberMatches ? numberMatches.map(n => parseFloat(n.replace(',', ''))) : [];
-
-    // If we don't have enough numbers, it's probably not a full trade row
-    // We need at least: Lot, Price, Profit (3 numbers) OR Lot, Profit (2 numbers min)
-    if (numbers.length < 2) continue;
-
-    const trade: Partial<TradeInput> = {
-      asset,
-      direction: 'buy', // default
-      entryPrice: 0,
-      lossAmount: 0,
-      positionSize: 0.1
-    };
-
-    // 3. Direction
-    if (PATTERNS.sell.test(line)) trade.direction = 'sell';
-
-    // 4. Heuristic Field Assignment
-    
-    // PROFIT: The LAST number in the row is almost always the Profit/Loss in MT4/MT5 history
-    const lastNum = numbers[numbers.length - 1];
-    
-    // Sanity check: Profit shouldn't be a massive number relative to others if it's a price
-    // But in crypto/indices, prices are big.
-    // However, Profit is usually the *last* column.
-    trade.lossAmount = lastNum;
-
-    // LOT SIZE: Look for small number (0.01 - 500) that isn't the Profit
-    // Usually the first small number in the sequence
-    const potentialLots = numbers.filter(n => 
-        n !== lastNum && 
-        n > 0 && 
-        n < 1000 && // Cap for lots
-        Math.abs(n) !== Math.abs(trade.lossAmount!) // distinct from PnL
-    );
-
-    if (potentialLots.length > 0) {
-        trade.positionSize = potentialLots[0];
-    }
-
-    // ENTRY PRICE: Number that is not Lot and not Profit
-    // If multiple remain, usually Open Price, SL, TP, Close Price
-    // We take the first remaining one as Open Price
-    const potentialPrices = numbers.filter(n => 
-        n !== lastNum && 
-        n !== trade.positionSize
-    );
-
-    if (potentialPrices.length > 0) {
-        trade.entryPrice = Math.abs(potentialPrices[0]);
-    }
-
-    console.log(`[TradeInference] Detected Trade: ${trade.asset} ${trade.direction} ${trade.positionSize} lots, PnL: ${trade.lossAmount}`);
-    trades.push(trade);
   }
-  
+
+  return trades;
+}
+
+// -------------------- TradingView Parsing (Generic) --------------------
+function parseTradingViewText(text: string): Partial<TradeInput>[] {
+  const trades: Partial<TradeInput>[] = [];
+  const TV_ASSETS = /\b([A-Z]{2,6}USDT|[A-Z]{2,6}USD|BTC|ETH|SOL|XRP|XAUUSD|EURUSD)\b/i;
+
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 3);
+
+  for (const line of lines) {
+    if (!/\b(entry|exit|strategy|buy|sell)\b/i.test(line)) continue;
+
+    const assetMatch = line.match(TV_ASSETS);
+    if (!assetMatch) continue;
+    const asset = assetMatch[0].toUpperCase();
+
+    const direction: 'buy' | 'sell' | 'unknown' = /\b(buy|long)\b/i.test(line)
+      ? 'buy'
+      : /\b(sell|short)\b/i.test(line)
+      ? 'sell'
+      : 'unknown';
+
+    // Try to find PnL or Price
+    const numbers = (line.match(/-?\d+(?:\.\d+)?/g) || []).map(n => parseFloat(n));
+    // Heuristic: Last number might be PnL if it's a closed trade line
+    const pnl = numbers.length > 0 ? numbers[numbers.length - 1] : 0;
+    
+    trades.push({
+        asset,
+        direction,
+        positionSize: 1, // Default for TV
+        entryPrice: numbers[0] || 0,
+        lossAmount: pnl
+    });
+  }
+
   return trades;
 }
 

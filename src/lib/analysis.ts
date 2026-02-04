@@ -20,21 +20,19 @@ function analyzeBatch(input: InferenceResult & { userAccountSize: number }, prop
     
     // 1. Calculate Risk Metrics
     const maxDrawdownPercent = (Math.abs(accountSummary.largestLoss) / userAccountSize) * 100;
-    const netPnlPercent = (Math.abs(accountSummary.netPnl) / userAccountSize) * 100;
     const isNetLoss = accountSummary.netPnl < 0;
 
     // 2. Check Prop Firm Rules
     let propFirmViolation = undefined;
-    if (rules) {
+    if (rules && rules.maxDailyLoss !== undefined) {
+        // Calculate daily loss limit in dollars
+        const dailyLossLimit = userAccountSize * rules.maxDailyLoss;
+
         // Check Daily Loss (approximated by largest loss or net pnl if all same day)
-        // For batch, we assume these trades might be on the same day if time clustering detected, 
-        // but for safety, if largest single loss > daily limit, it's a fail.
-        if (maxDrawdownPercent > (rules.dailyDrawdown * 100)) {
-            propFirmViolation = `Violated ${rules.dailyDrawdown * 100}% Max Daily Loss rule on a single trade.`;
-        } else if (isNetLoss && netPnlPercent > (rules.dailyDrawdown * 100)) {
-             propFirmViolation = `Violated ${rules.dailyDrawdown * 100}% Max Daily Loss rule (Cumulative).`;
-        } else if (isNetLoss && netPnlPercent > (rules.totalDrawdown * 100)) {
-            propFirmViolation = `Violated ${rules.totalDrawdown * 100}% Max Total Loss rule.`;
+        if (Math.abs(accountSummary.largestLoss) > dailyLossLimit) {
+            propFirmViolation = `Violated $${dailyLossLimit.toFixed(0)} Max Daily Loss rule on a single trade (${(rules.maxDailyLoss * 100).toFixed(1)}%).`;
+        } else if (isNetLoss && Math.abs(accountSummary.netPnl) > dailyLossLimit) {
+             propFirmViolation = `Violated $${dailyLossLimit.toFixed(0)} Max Daily Loss rule (Cumulative).`;
         }
     }
 
@@ -137,14 +135,18 @@ function analyzeSingle(input: TradeInput, propFirm: PropFirm): AnalysisResult {
   const rules = PROP_FIRM_RULES[propFirm];
   let propFirmViolation = undefined;
   
-  if (riskPercentage > (rules.maxRisk * 100)) {
-      propFirmViolation = `Violated ${rules.maxRisk * 100}% Max Risk rule.`;
-  }
-  else if (riskPercentage > (rules.dailyDrawdown * 100)) {
-      propFirmViolation = `Violated ${rules.dailyDrawdown * 100}% Max Daily Loss rule.`;
-  }
-  else if (riskPercentage > (rules.totalDrawdown * 100)) {
-      propFirmViolation = `Violated ${rules.totalDrawdown * 100}% Max Total Loss rule.`;
+  if (rules) {
+      if (riskPercentage > (rules.maxRiskPerTrade * 100)) {
+          propFirmViolation = `Violated ${(rules.maxRiskPerTrade * 100).toFixed(1)}% Max Risk rule.`;
+      }
+      else if (input.lossAmount && Math.abs(input.lossAmount) > (accountSize * rules.maxDailyLoss)) {
+          propFirmViolation = `Violated $${(accountSize * rules.maxDailyLoss).toFixed(0)} Max Daily Loss rule.`;
+      }
+      
+      // Check allowed assets
+      if (rules.allowedAssets && !rules.allowedAssets.includes(asset)) {
+          propFirmViolation = `Asset ${asset} is NOT allowed by ${propFirm}.`;
+      }
   }
 
   // 6. Determine Cause of Death (Brutal Copy Upgrade)
@@ -153,7 +155,7 @@ function analyzeSingle(input: TradeInput, propFirm: PropFirm): AnalysisResult {
   let fix = ["Identify your edge", "Wait for clear confirmation", "Don't trade if you don't know why"];
 
   // Priority 1: Position Size / Prop Firm Kill
-  if (propFirmViolation || riskPercentage > (rules.dailyDrawdown * 100 || 10)) {
+  if (propFirmViolation || (input.lossAmount && rules && Math.abs(input.lossAmount) > (accountSize * rules.maxDailyLoss)) || riskPercentage > 10) {
        causeOfDeath = "Size Queen";
        verdict = propFirmViolation 
           ? `You blew the ${propFirm} challenge instantly. ${propFirmViolation} You don't deserve capital.`

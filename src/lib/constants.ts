@@ -43,11 +43,49 @@ export const LOT_SUGGESTIONS = {
   index: [0.1, 0.5, 1.0, 5.0, 10.0, 100.0],
 };
 
-export const PROP_FIRM_RULES: Record<PropFirm, PropFirmConfig> = {
-  FTMO: { maxRisk: 0.02, dailyDrawdown: 0.05, totalDrawdown: 0.1 },
-  MyFundedFX: { maxRisk: 0.02, dailyDrawdown: 0.05, totalDrawdown: 0.08 },
-  FundingPips: { maxRisk: 0.02, dailyDrawdown: 0.05, totalDrawdown: 0.1 },
-  None: { maxRisk: 1.0, dailyDrawdown: 1.0, totalDrawdown: 1.0 }, // No strict rules
+export const PROP_FIRM_RULES: Record<PropFirm, PropFirmConfig> = { 
+  'None': { 
+    maxRiskPerTrade: 0.02, 
+    maxPositionSize: 10, 
+    maxDailyLoss: 0.05, 
+    allowedAssets: ASSETS.map(a => a.symbol) 
+  }, 
+  'FTMO': { 
+    maxRiskPerTrade: 0.01, 
+    maxPositionSize: 15, 
+    maxDailyLoss: 0.05, 
+    allowedAssets: ASSETS.filter(a => ['forex', 'indices'].includes(a.type)).map(a => a.symbol) 
+  }, 
+  'TopStep': { 
+    maxRiskPerTrade: 0.02, 
+    maxPositionSize: 10, 
+    maxDailyLoss: 0.04, 
+    allowedAssets: ASSETS.filter(a => ['forex', 'crypto'].includes(a.type)).map(a => a.symbol) 
+  }, 
+  'The5ers': { 
+    maxRiskPerTrade: 0.015, 
+    maxPositionSize: 8, 
+    maxDailyLoss: 0.05, 
+    allowedAssets: ASSETS.filter(a => ['forex', 'indices', 'crypto'].includes(a.type)).map(a => a.symbol) 
+  }, 
+  'FundingTalent': { 
+    maxRiskPerTrade: 0.01, 
+    maxPositionSize: 12, 
+    maxDailyLoss: 0.03, 
+    allowedAssets: ASSETS.filter(a => ['forex'].includes(a.type)).map(a => a.symbol) 
+  }, 
+  'MyForexFunds': { 
+    maxRiskPerTrade: 0.02, 
+    maxPositionSize: 15, 
+    maxDailyLoss: 0.05, 
+    allowedAssets: ASSETS.filter(a => ['forex', 'crypto', 'indices'].includes(a.type)).map(a => a.symbol) 
+  }, 
+  'OneUp': { 
+    maxRiskPerTrade: 0.015, 
+    maxPositionSize: 10, 
+    maxDailyLoss: 0.04, 
+    allowedAssets: ASSETS.filter(a => ['forex', 'indices'].includes(a.type)).map(a => a.symbol) 
+  } 
 };
 
 export const YOUTUBE_CHANNEL_URL = "https://youtube.com/@stop_the_loss?si=NrdMpqTKx-WzwQW_";

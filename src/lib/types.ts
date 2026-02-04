@@ -6,9 +6,10 @@ export type Asset = {
 };
 
 export type PropFirmConfig = {
-  maxRisk: number; // Single trade risk limit (e.g., 0.02 for 2%)
-  dailyDrawdown: number;
-  totalDrawdown: number;
+  maxRiskPerTrade: number;   // % of account per trade
+  maxPositionSize: number;   // max lots
+  maxDailyLoss: number;      // % of account per day
+  allowedAssets: string[];   // list of symbols allowed
 };
 
 export type TradeInput = {
@@ -21,7 +22,7 @@ export type TradeInput = {
   leverage?: number;
   timeframe: string;
   lossAmount?: number;
-  direction?: 'buy' | 'sell';
+  direction?: 'buy' | 'sell' | 'unknown';
   timestamp?: number;
 };
 
@@ -60,7 +61,7 @@ export type InferenceResult = {
   confidence: 'high' | 'medium' | 'low';
 };
 
-export type PropFirm = 'FTMO' | 'MyFundedFX' | 'FundingPips' | 'None';
+export type PropFirm = 'None' | 'FTMO' | 'TopStep' | 'The5ers' | 'FundingTalent' | 'MyForexFunds' | 'OneUp';
 
 export type AffiliateLink = {
   name: string;

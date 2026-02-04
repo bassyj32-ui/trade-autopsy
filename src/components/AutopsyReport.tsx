@@ -16,8 +16,9 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
     if (!reportRef.current) return;
     const canvas = await html2canvas(reportRef.current, {
         backgroundColor: '#f3f4f6', // Paper color for the download
-        scale: 2, // High res
+        scale: 3, // Ultra High res for mobile
         useCORS: true,
+        logging: false,
     });
     const link = document.createElement('a');
     link.download = `coroner-report-${result.id}.png`;
@@ -31,14 +32,16 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
     try {
         const canvas = await html2canvas(reportRef.current, {
             backgroundColor: '#f3f4f6',
-            scale: 2, // High res
+            scale: 3, // Ultra High res for mobile
             useCORS: true,
+            logging: false,
         });
         
         canvas.toBlob(async (blob) => {
             if (!blob) return;
             const file = new File([blob], `autopsy-${result.id}.png`, { type: 'image/png' });
             
+            // Check for native sharing support
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
                     await navigator.share({
@@ -50,16 +53,17 @@ export function AutopsyReport({ result, onReset }: AutopsyReportProps) {
                     console.log('Share failed or cancelled', e);
                 }
             } else {
-                // Fallback to download
+                // Fallback: Download and prompt
                 const link = document.createElement('a');
                 link.download = `autopsy-${result.id}.png`;
                 link.href = canvas.toDataURL('image/png');
                 link.click();
-                alert("Image saved! Upload this to X/Twitter manually.");
+                alert("Native sharing not supported on this device/browser. \n\nThe image has been downloaded to your device.\n\nPlease open X (Twitter) or Instagram and upload it manually!");
             }
         }, 'image/png');
     } catch (e) {
         console.error("Share generation failed", e);
+        alert("Could not generate image for sharing.");
     }
   };
 

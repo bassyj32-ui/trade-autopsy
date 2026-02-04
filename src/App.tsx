@@ -26,7 +26,7 @@ function App() {
     // The TradeForm guarantees the structure is correct before calling this.
     const res = analyzeTrade(input as any, propFirm);
     setResult(res);
-    const newHistory = [res, ...history].slice(0, 5);
+    const newHistory = [res, ...history].slice(0, 20);
     setHistory(newHistory);
     localStorage.setItem('trade-autopsy-history', JSON.stringify(newHistory));
   };
