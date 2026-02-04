@@ -25,20 +25,50 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
       const texts: string[] = [];
       
       const upscaleImage = async (file: File): Promise<Blob> => {
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        await img.decode();
-      
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width * 2;
-        canvas.height = img.height * 2;
-      
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      
-        return new Promise(resolve => 
-          canvas.toBlob(b => resolve(b!), 'image/png')
-        );
+        return new Promise((resolve) => {
+          const img = new Image();
+          const url = URL.createObjectURL(file);
+          
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            
+            // Skip upscaling if image is already large enough (width > 1500px)
+            // or if it's a very small image, we upscale.
+            // Upscaling large images consumes too much memory and time.
+            if (img.width > 1500) {
+              resolve(file); // Return original file
+              return;
+            }
+
+            const canvas = document.createElement('canvas');
+            // Moderate upscaling: 2x, but cap max dimension to avoid browser crash
+            const scale = 2;
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+          
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(file); // Fallback to original
+              return;
+            }
+
+            // Better upscaling quality
+            ctx.imageSmoothingEnabled = false; 
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+            canvas.toBlob(blob => {
+              if (blob) resolve(blob);
+              else resolve(file); // Fallback
+            }, 'image/png');
+          };
+
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve(file); // Fallback to original on error
+          };
+
+          img.src = url;
+        });
       };
 
       // Process files sequentially to avoid browser lag
@@ -46,16 +76,22 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
           const file = files[i];
           
           console.log(`Processing file ${i + 1}/${files.length}...`);
-          const processedFile = await upscaleImage(file);
+          // Safety timeout for image processing
+          const processedFile = await Promise.race([
+            upscaleImage(file),
+            new Promise<Blob>(resolve => setTimeout(() => resolve(file), 5000))
+          ]);
+
           const { data: { text } } = await Tesseract.recognize(
-        processedFile,
-        'eng',
-        { 
-          logger: (m: any) => console.log(m),
-          tessedit_char_whitelist: '0123456789.-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ',
-          tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
-        } as any
-      );
+            processedFile,
+            'eng',
+            { 
+              logger: (m: any) => console.log(m),
+              // Relaxed whitelist to ensure we capture everything, then clean it up later
+              // tessedit_char_whitelist: '0123456789.-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ', 
+              tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
+            } as any
+          );
           texts.push(text);
       }
       
@@ -76,6 +112,8 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
     } finally {
       setLoading(false);
       setFileCount(0);
+      // Reset input value to allow selecting same file again
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -100,7 +138,15 @@ export function ScreenshotUpload({ onResult }: ScreenshotUploadProps) {
             </div>
           )}
         </div>
-        <input type="file" className="hidden" accept="image/*" multiple onChange={handleFileChange} disabled={loading} />
+        <input 
+          type="file" 
+          className="hidden" 
+          accept="image/*" 
+          multiple 
+          onChange={handleFileChange} 
+          onClick={(e) => (e.currentTarget.value = '')}
+          disabled={loading} 
+        />
       </label>
       {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}
     </div>
